@@ -13,3 +13,11 @@ __pycache__/
 .idea/
 *.swp
 .DS_Store
+
+# Local notes (not published)
+REFACTOR_PLAN.md
+
+# Old packages replaced during the refactor (kept locally, not tracked on this branch)
+src/trajectory_msgs_custom/
+src/puzzlebot_msgs/
+src/yolo_msg/
