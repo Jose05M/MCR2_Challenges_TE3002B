@@ -1,0 +1,6 @@
+path_generator:
+  ros__parameters:
+    points_x:     [0.5, 0.0, -0.5, 0.0]
+    points_y:     [0.0, 0.5, 0.0, 0.0]
+    points_theta: [0.0, 1.57, 3.14, -1.57]
+    points_t:     [5.0, 10.0, 5.0, 5.0]
