@@ -1,6 +1,6 @@
 from setuptools import setup
 
-package_name = 'pzb_control'
+package_name = 'pzb_odometry'
 
 setup(
     name=package_name,
@@ -14,15 +14,12 @@ setup(
     zip_safe=True,
     maintainer='Jose Eduardo Sanchez Martinez',
     maintainer_email='eduardo.mtz1403@gmail.com',
-    description='Puzzlebot controllers and path generators',
+    description='Puzzlebot wheel odometry (dead reckoning)',
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'open_loop_path_generator = pzb_control.open_loop_path_generator:main',
-            'open_loop_controller = pzb_control.open_loop_controller:main',
-            'closed_loop_path_generator = pzb_control.closed_loop_path_generator:main',
-            'closed_loop_controller = pzb_control.closed_loop_controller:main',
+            'odometry = pzb_odometry.odometry:main',
         ],
     },
 )

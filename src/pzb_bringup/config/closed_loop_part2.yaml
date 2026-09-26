@@ -1,0 +1,22 @@
+# Closed-loop, part 2: path generator sends goals (x, y, theta) one at a time.
+# 0.5 m square returning to the initial pose; gains from the original controller_node.
+
+closed_loop_path_generator:
+  ros__parameters:
+    points_x:     [0.5, 0.5, 0.0, 0.0]
+    points_y:     [0.0, 0.5, 0.5, 0.0]
+    points_theta: [0.0, 1.5708, 3.14159, 0.0]   # [rad] final heading at each goal
+    min_reachable_dist: 0.05                   # [m]
+
+closed_loop_controller:
+  ros__parameters:
+    Kv: 0.5
+    Kw: 0.5
+    max_accel: 0.3           # [m/s²]
+    v_min: 0.07              # [m/s] linear deadzone
+    v_max: 0.40              # [m/s]
+    w_fixed: 1.0             # [rad/s] turning speed
+    align_threshold: 0.05    # [rad]
+    goal_threshold: 0.10     # [m] start braking
+    goal_reached_dist: 0.04  # [m]
+    align_final_heading: true

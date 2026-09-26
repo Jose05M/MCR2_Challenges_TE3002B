@@ -7,7 +7,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry
 from std_msgs.msg import Bool
-from puzzlebot_msgs.msg import Goal
+from pzb_interfaces.msg import Goal
 
 
 def wrap_to_pi(theta):
@@ -20,7 +20,7 @@ def wrap_to_pi(theta):
 class ClosedLoopController(Node):
 
     def __init__(self):
-        super().__init__('controller_node')
+        super().__init__('closed_loop_controller')
 
         # Ganancias
         self.Kv = self.declare_parameter('Kv', 0.5).value
@@ -28,31 +28,34 @@ class ClosedLoopController(Node):
 
         # Rampa lineal
         self.V_actual = 0.0
-        self.max_accel = 0.3
+        self.max_accel = self.declare_parameter('max_accel', 0.3).value
 
         # Límites de velocidad
-        self.V_min = 0.07
-        self.V_max = 0.40
-        self.W_fixed = 1.0
+        self.V_min = self.declare_parameter('v_min', 0.07).value
+        self.V_max = self.declare_parameter('v_max', 0.40).value
+        self.W_fixed = self.declare_parameter('w_fixed', 1.0).value
 
         # Umbrales
-        self.align_threshold = 0.05
-        self.goal_threshold  = 0.10
-        self.goal_reached_d  = 0.04
+        self.align_threshold = self.declare_parameter('align_threshold', 0.05).value
+        self.goal_threshold = self.declare_parameter('goal_threshold', 0.10).value
+        self.goal_reached_d = self.declare_parameter('goal_reached_dist', 0.04).value
+
+        # Girar a la orientación final del goal al llegar a su posición
+        self.align_final_heading = self.declare_parameter('align_final_heading', True).value
 
         # Estado
-        self.phase          = 'wait'   # wait | rotate | advance
-        self.finished       = False
+        self.phase = 'wait'   # wait | rotate | advance
+        self.finished = False
         self.returning_home = False
-        self.current_goal   = None     # Goal msg activo
+        self.current_goal = None     # Goal msg activo
 
         # Pose
-        self.x     = 0.0
-        self.y     = 0.0
+        self.x = 0.0
+        self.y = 0.0
         self.theta = 0.0
 
         # dt
-        self.first     = True
+        self.first = True
         self.last_time = None
 
         # Suscripciones
@@ -63,7 +66,7 @@ class ClosedLoopController(Node):
             Goal, 'goal', self.goal_callback, 10)
 
         # Publishers
-        self.pub_cmd          = self.create_publisher(Twist, 'cmd_vel', qos.qos_profile_sensor_data)
+        self.pub_cmd = self.create_publisher(Twist, 'cmd_vel', qos.qos_profile_sensor_data)
         self.pub_goal_reached = self.create_publisher(Bool, 'goal_reached', 10)
 
         self.timer = self.create_timer(0.05, self.run)
@@ -76,9 +79,9 @@ class ClosedLoopController(Node):
             return
 
         self.current_goal = msg
-        self.phase        = 'rotate'
-        self.V_actual     = 0.0
-        self.finished     = False
+        self.phase = 'rotate'
+        self.V_actual = 0.0
+        self.finished = False
         self.returning_home = False
         self.get_logger().info(f"New goal received: ({msg.x:.2f}, {msg.y:.2f}, θ={msg.theta:.2f})")
 
@@ -119,12 +122,12 @@ class ClosedLoopController(Node):
             cmd = Twist()
             if abs(e_theta_final) > self.align_threshold:
                 cmd.angular.z = self.W_fixed * np.sign(e_theta_final)
-                cmd.linear.x  = 0.0
+                cmd.linear.x = 0.0
                 self.pub_cmd.publish(cmd)
             else:
                 self.get_logger().info("Final orientation reached. Goal complete!")
                 self.returning_home = False
-                self.finished       = True
+                self.finished = True
                 self.stop_robot()
                 reached = Bool()
                 reached.data = True
@@ -134,9 +137,9 @@ class ClosedLoopController(Node):
         x_g = self.current_goal.x
         y_g = self.current_goal.y
 
-        e_x     = x_g - self.x
-        e_y     = y_g - self.y
-        e_d     = np.sqrt(e_x**2 + e_y**2)
+        e_x = x_g - self.x
+        e_y = y_g - self.y
+        e_d = np.sqrt(e_x**2 + e_y**2)
         e_theta = wrap_to_pi(np.arctan2(e_y, e_x) - self.theta)
 
         cmd = Twist()
@@ -145,25 +148,33 @@ class ClosedLoopController(Node):
         if self.phase == 'rotate':
             if abs(e_theta) > self.align_threshold:
                 cmd.angular.z = self.W_fixed * np.sign(e_theta)
-                cmd.linear.x  = 0.0
+                cmd.linear.x = 0.0
             else:
                 self.get_logger().info("Aligned! Advancing...")
-                self.phase    = 'advance'
+                self.phase = 'advance'
                 self.V_actual = 0.0
 
         # ── FASE 2: AVANZAR ────────────────────────────────────────
         if self.phase == 'advance':
             if e_d < self.goal_threshold:
-                # Frenar con rampa
-                self.V_actual = max(self.V_actual - self.max_accel * dt, 0.0)
-                cmd.linear.x  = self.apply_linear_deadzone(self.V_actual)
+                # Frenar con rampa; sigue a V_min hasta entrar a goal_reached_d,
+                # si no, el robot puede detenerse antes del goal y nunca terminar
+                v_floor = 0.0 if e_d < self.goal_reached_d else self.V_min
+                self.V_actual = max(self.V_actual - self.max_accel * dt, v_floor)
+                cmd.linear.x = self.apply_linear_deadzone(self.V_actual)
                 cmd.angular.z = 0.0
                 self.pub_cmd.publish(cmd)
 
                 if e_d < self.goal_reached_d and self.V_actual < 1e-3:
-                    self.get_logger().info(f"Position reached! Adjusting orientation...")
-                    self.returning_home = True
-                    self.V_actual       = 0.0
+                    self.V_actual = 0.0
+                    if self.align_final_heading:
+                        self.get_logger().info("Position reached! Adjusting orientation...")
+                        self.returning_home = True
+                    else:
+                        self.get_logger().info("Position reached! Goal complete!")
+                        self.finished = True
+                        self.stop_robot()
+                        self.pub_goal_reached.publish(Bool(data=True))
                 return
 
             V_deseada = np.clip(self.Kv * e_d, self.V_min, self.V_max)
@@ -173,7 +184,7 @@ class ClosedLoopController(Node):
             else:
                 self.V_actual = max(self.V_actual - self.max_accel * dt, V_deseada)
 
-            cmd.linear.x  = self.apply_linear_deadzone(self.V_actual)
+            cmd.linear.x = self.apply_linear_deadzone(self.V_actual)
             cmd.angular.z = self.Kw * e_theta
 
         self.pub_cmd.publish(cmd)

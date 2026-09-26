@@ -22,3 +22,4 @@ src/trajectory_msgs_custom/
 src/puzzlebot_msgs/
 src/yolo_msg/
 src/trajectory_controller/
+src/puzzlebot_control/
