@@ -1,4 +1,14 @@
+"""
+Traffic sign detector (YOLOv8).
+
+Runs the trained YOLOv8 model on the camera image, keeps the closest sign within
+an area range, corrects LEFT/RIGHT with the arrow shape, and publishes the sign
+label on /traffic_signals/state when it changes.
+"""
+import os
+
 import rclpy
+from ament_index_python.packages import get_package_share_directory
 from rclpy.node import Node
 from sensor_msgs.msg import Image
 from std_msgs.msg import String
@@ -7,13 +17,15 @@ import cv2
 import numpy as np
 
 # CORRECCIÓN LEFT / RIGHT
+
+
 def detect_arrow_direction(roi):
 
     gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-    blur = cv2.GaussianBlur(gray, (5,5), 0)
+    blur = cv2.GaussianBlur(gray, (5, 5), 0)
 
-    _, thresh = cv2.threshold(blur,0,255,cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    contours, _ = cv2.findContours(thresh,cv2.RETR_EXTERNAL,cv2.CHAIN_APPROX_SIMPLE)
+    _, thresh = cv2.threshold(blur, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     if len(contours) == 0:
         return "UNKNOWN"
@@ -26,8 +38,8 @@ def detect_arrow_direction(roi):
 
     cx = int(M["m10"] / M["m00"])
 
-    leftmost = tuple(cnt[cnt[:,:,0].argmin()][0])
-    rightmost = tuple(cnt[cnt[:,:,0].argmax()][0])
+    leftmost = tuple(cnt[cnt[:, :, 0].argmin()][0])
+    rightmost = tuple(cnt[cnt[:, :, 0].argmax()][0])
 
     dist_left = abs(cx - leftmost[0])
     dist_right = abs(rightmost[0] - cx)
@@ -40,26 +52,37 @@ def detect_arrow_direction(roi):
 
 class YoloInference(Node):
 
-#best-> normal, anterior. 
-#best1-> gray,ruido
-#best2 _gray, sin ruido
-#best3 -> color
+    # best-> normal, anterior.
+    # best1-> gray,ruido
+    # best2 _gray, sin ruido
+    # best3 -> color
     def __init__(self):
-        super().__init__('yolov8_recognition')
-        self.model = YOLO("/home/ed/Downloads/yolo_train/best_1.pt")
+        super().__init__('traffic_sign_detector')
+        # model_path: full path to the .pt file, set in the YAML.
+        # Default: the model installed with this package (models/best_1.pt)
+        default_model = os.path.join(
+            get_package_share_directory('pzb_detection'), 'models', 'best_1.pt')
+        model_path = os.path.expanduser(
+            self.declare_parameter('model_path', default_model).value)
+        if not os.path.isfile(model_path):
+            self.get_logger().error(f'YOLO model not found: {model_path}')
+            raise FileNotFoundError(model_path)
+        self.debug_view = self.declare_parameter('debug_view', True).value
+        self.get_logger().info(f'Loading YOLO model: {model_path}')
+        self.model = YOLO(model_path)
 
         self.img = None
         self.valid_img = False
         self.last_state = ""
 
-        self.sub = self.create_subscription(Image,'/video_source/raw',self.camera_callback,10)
-        self.state_pub = self.create_publisher(String,'/traffic_signals/state',10)
+        self.sub = self.create_subscription(Image, '/video_source/raw', self.camera_callback, 10)
+        self.state_pub = self.create_publisher(String, '/traffic_signals/state', 10)
 
-        self.timer = self.create_timer(1/20,self.timer_callback)
+        self.timer = self.create_timer(1 / 20, self.timer_callback)
 
     def camera_callback(self, msg):
         try:
-            frame = np.frombuffer(msg.data,dtype=np.uint8).reshape((msg.height, msg.width, 3))
+            frame = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, 3))
             self.img = frame.copy()
             self.valid_img = True
 
@@ -71,16 +94,16 @@ class YoloInference(Node):
             return
 
         # RESIZE 416x416
-        frame = cv2.resize(self.img, (416,416))
+        frame = cv2.resize(self.img, (416, 416))
 
         # GRAYSCALE
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         # YOLO necesita 3 canales
-        gray_3ch = cv2.cvtColor(gray,cv2.COLOR_GRAY2BGR)
+        gray_3ch = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
         # INFERENCIA
-        results = self.model(gray_3ch,conf=0.4,imgsz=416,verbose=False)
+        results = self.model(gray_3ch, conf=0.4, imgsz=416, verbose=False)
 
         best_label = None
         best_area = 0
@@ -89,8 +112,7 @@ class YoloInference(Node):
         for r in results:
             for box in r.boxes:
 
-                x1, y1, x2, y2 = map(int,box.xyxy[0])
-                conf = float(box.conf[0])
+                x1, y1, x2, y2 = map(int, box.xyxy[0])
                 cls = int(box.cls[0])
 
                 label = self.model.names[cls]
@@ -137,19 +159,20 @@ class YoloInference(Node):
             cv2.putText(
                 annotated_frame,
                 f"FRONT: {best_label}",
-                (20,40),
+                (20, 40),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 1,
-                (0,255,0),
+                (0, 255, 0),
                 3
             )
 
-        cv2.imshow(
-            "YOLO Detection",
-            annotated_frame
-        )
+        if self.debug_view:
+            cv2.imshow(
+                "YOLO Detection",
+                annotated_frame
+            )
 
-        cv2.waitKey(1)
+            cv2.waitKey(1)
 
         if best_label is not None and best_label != self.last_state:
             state_msg = String()
@@ -167,6 +190,7 @@ def main(args=None):
     node.destroy_node()
     cv2.destroyAllWindows()
     rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
