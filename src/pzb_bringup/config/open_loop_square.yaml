@@ -1,0 +1,18 @@
+# Open-loop square path: 2 m side, starting at (0, 0, 0).
+# Each point: position (x, y), final heading theta and time to reach it (t).
+
+open_loop_path_generator:
+  ros__parameters:
+    points_x:     [2.0, 2.0, 0.0, 0.0]
+    points_y:     [0.0, 2.0, 2.0, 0.0]
+    points_theta: [1.57, 3.14, -1.57, 0.0]
+    points_t:     [8.0, 8.0, 8.0, 8.0]
+    v_max: 0.38   # [m/s] limit for the reachability check
+    w_max: 4.85   # [rad/s]
+
+open_loop_controller:
+  ros__parameters:
+    v_max: 0.38      # [m/s]
+    w_max: 4.85      # [rad/s]
+    dist_corr: 1.05  # linear command multiplier (wheel slip)
+    turn_corr: 1.10  # angular command multiplier (inertia)

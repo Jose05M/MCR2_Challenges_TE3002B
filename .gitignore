@@ -21,3 +21,4 @@ REFACTOR_PLAN.md
 src/trajectory_msgs_custom/
 src/puzzlebot_msgs/
 src/yolo_msg/
+src/trajectory_controller/
