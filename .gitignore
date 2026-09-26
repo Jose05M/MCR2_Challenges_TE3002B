@@ -26,3 +26,5 @@ src/puzzlebot_control/
 src/mcr2_challenge/
 src/puzzlebot_line_follower/
 src/yolov8_ros2/
+# Final challenge files already migrated (the rest of mcr2_puzzlebot is migrated step by step)
+src/mcr2_puzzlebot/mcr2_puzzlebot/image_compressor.py

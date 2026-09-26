@@ -22,6 +22,7 @@ setup(
             'traffic_light_detector = pzb_vision.traffic_light_detector:main',
             'line_detector = pzb_vision.line_detector:main',
             'usb_camera_publisher = pzb_vision.usb_camera_publisher:main',
+            'image_compressor = pzb_vision.image_compressor:main',
         ],
     },
 )

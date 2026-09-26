@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
+"""
+Image compressor (runs on the Jetson).
 
+Resizes the raw camera image, optionally converts it to grayscale and publishes
+it as JPEG on /video_source/yolo/compressed, so the laptop receives much less
+data over Wi-Fi for line following and YOLO.
+"""
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Image
@@ -17,6 +23,7 @@ qos = QoSProfile(
     depth=1
 )
 
+
 class YoloImageCompressor(Node):
 
     def __init__(self):
@@ -24,10 +31,10 @@ class YoloImageCompressor(Node):
 
         self.declare_parameter('input_topic', '/video_source/raw')
         self.declare_parameter('output_topic', '/video_source/yolo/compressed')
-        self.declare_parameter('width',416)
-        self.declare_parameter('height',416)
-        self.declare_parameter('jpeg_quality',40)
-        self.declare_parameter('grayscale',True)
+        self.declare_parameter('width', 416)
+        self.declare_parameter('height', 416)
+        self.declare_parameter('jpeg_quality', 40)
+        self.declare_parameter('grayscale', True)
 
         input_topic = self.get_parameter('input_topic').value
         output_topic = self.get_parameter('output_topic').value
@@ -36,20 +43,20 @@ class YoloImageCompressor(Node):
         self.jpeg_quality = self.get_parameter('jpeg_quality').value
         self.grayscale = self.get_parameter('grayscale').value
 
-        self.sub = self.create_subscription(Image,input_topic,self.image_callback,10)
-        self.pub = self.create_publisher(CompressedImage,output_topic,qos)
+        self.sub = self.create_subscription(Image, input_topic, self.image_callback, 10)
+        self.pub = self.create_publisher(CompressedImage, output_topic, qos)
         self.get_logger().info('Yolo Image Compressor Started')
 
     def image_callback(self, msg):
         try:
-            frame = np.frombuffer(msg.data,dtype=np.uint8).reshape((msg.height, msg.width, 3))
-            frame = cv2.resize(frame,(self.width, self.height))
+            frame = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, 3))
+            frame = cv2.resize(frame, (self.width, self.height))
             if self.grayscale:
-                gray = cv2.cvtColor(frame,cv2.COLOR_BGR2GRAY)
-                frame = cv2.cvtColor(gray,cv2.COLOR_GRAY2BGR)
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                frame = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
-            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY),self.jpeg_quality]
-            success, encoded_img = cv2.imencode('.jpg',frame,encode_param)
+            encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), self.jpeg_quality]
+            success, encoded_img = cv2.imencode('.jpg', frame, encode_param)
 
             if not success:
                 return
@@ -72,6 +79,7 @@ def main(args=None):
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()
+
 
 if __name__ == '__main__':
     main()
