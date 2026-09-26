@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-navigation_controller.py
-------------------------
+Traffic light navigation controller.
+
 ROS 2 node that drives a differential-drive robot through a list of waypoints
 while obeying traffic light commands published by traffic_light_detector.py.
 
@@ -37,9 +37,7 @@ from rclpy import qos
 
 
 class NavigationController(Node):
-    """
-    Point-to-point proportional controller with traffic light awareness.
-    """
+    """Point-to-point proportional controller with traffic light awareness."""
 
     # Speed multipliers per traffic state
     SPEED_FACTOR = {
@@ -50,7 +48,7 @@ class NavigationController(Node):
     }
 
     def __init__(self):
-        super().__init__('navigation_controller')
+        super().__init__('traffic_light_nav_controller')
 
         # ---- Parameters (set via launch file / config YAML) ----------------
         #  waypoints: flat list [x0, y0, x1, y1, ...]
@@ -65,16 +63,16 @@ class NavigationController(Node):
         self.declare_parameter('odom_topic',       '/odom')
         self.declare_parameter('state_topic',      '/traffic_light/state')
 
-        flat_wp     	 = self.get_parameter('waypoints').value
-        self.goal_tol    = self.get_parameter('goal_tolerance').value
-        self.v_max       = self.get_parameter('max_linear_vel').value
-        self.w_max       = self.get_parameter('max_angular_vel').value
-        self.k_lin       = self.get_parameter('k_linear').value
-        self.k_ang       = self.get_parameter('k_angular').value
+        flat_wp = self.get_parameter('waypoints').value
+        self.goal_tol = self.get_parameter('goal_tolerance').value
+        self.v_max = self.get_parameter('max_linear_vel').value
+        self.w_max = self.get_parameter('max_angular_vel').value
+        self.k_lin = self.get_parameter('k_linear').value
+        self.k_ang = self.get_parameter('k_angular').value
         self.head_thresh = self.get_parameter('heading_threshold').value
-        cmd_topic        = self.get_parameter('cmd_vel_topic').value
-        odom_topic       = self.get_parameter('odom_topic').value
-        state_topic      = self.get_parameter('state_topic').value
+        cmd_topic = self.get_parameter('cmd_vel_topic').value
+        odom_topic = self.get_parameter('odom_topic').value
+        state_topic = self.get_parameter('state_topic').value
 
         if len(flat_wp) % 2 != 0:
             self.get_logger().error('waypoints must have an even number of values (x,y pairs)')
@@ -84,20 +82,19 @@ class NavigationController(Node):
             (float(flat_wp[i]), float(flat_wp[i+1]))
             for i in range(0, len(flat_wp), 2)
         ]
-        self.wp_index   = 0
+        self.wp_index = 0
 
         # ---- State ---------------------------------------------------------
-        self.x          = 0.0
-        self.y          = 0.0
-        self.yaw        = 0.0
-        self.tl_state   = 'UNKNOWN'
+        self.x = 0.0
+        self.y = 0.0
+        self.yaw = 0.0
+        self.tl_state = 'UNKNOWN'
         self.last_motion_state = ""
         self.current_linear_vel = 0.0
         self.acceleration = 0.01   # rampa de velocidad
-        
 
         # ---- ROS I/O -------------------------------------------------------
-        self.pub_vel  = self.create_publisher(Twist, cmd_topic, 10)
+        self.pub_vel = self.create_publisher(Twist, cmd_topic, 10)
 
         self.sub_odom = self.create_subscription(
             Odometry,
@@ -105,8 +102,8 @@ class NavigationController(Node):
             self._odom_callback,
             qos.qos_profile_sensor_data
         )
-        
-        self.sub_tl   = self.create_subscription(
+
+        self.sub_tl = self.create_subscription(
             String, state_topic, self._tl_callback, 10)
 
         # Control loop at 20 Hz
@@ -126,7 +123,7 @@ class NavigationController(Node):
         # Quaternion → yaw (rotation around Z)
         siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
         cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
-        self.yaw  = math.atan2(siny_cosp, cosy_cosp)
+        self.yaw = math.atan2(siny_cosp, cosy_cosp)
 
     def _tl_callback(self, msg: String):
         self.tl_state = msg.data
@@ -138,7 +135,7 @@ class NavigationController(Node):
     @staticmethod
     def _normalise_angle(angle: float) -> float:
         """Wrap angle to (-π, π]."""
-        while angle >  math.pi:
+        while angle > math.pi:
             angle -= 2.0 * math.pi
         while angle <= -math.pi:
             angle += 2.0 * math.pi
@@ -158,9 +155,9 @@ class NavigationController(Node):
 
         gx, gy = self.waypoints[self.wp_index]
 
-        dx        = gx - self.x
-        dy        = gy - self.y
-        distance  = math.hypot(dx, dy)
+        dx = gx - self.x
+        dy = gy - self.y
+        distance = math.hypot(dx, dy)
 
         # ---- Goal reached? -------------------------------------------------
         if distance < self.goal_tol:
@@ -171,7 +168,7 @@ class NavigationController(Node):
             return
 
         # ---- Heading error -------------------------------------------------
-        desired_yaw   = math.atan2(dy, dx)
+        desired_yaw = math.atan2(dy, dx)
         heading_error = self._normalise_angle(desired_yaw - self.yaw)
 
         # ---- Proportional controller ---------------------------------------
@@ -229,11 +226,11 @@ class NavigationController(Node):
         if motion_state != self.last_motion_state:
             self.get_logger().info(motion_state)
             self.last_motion_state = motion_state
-        linear_vel  *= speed_factor
+        linear_vel *= speed_factor
         # Also scale angular velocity so the robot doesn't spin while stopped
         angular_vel *= max(speed_factor, 0.0)
 
-        twist.linear.x  = linear_vel
+        twist.linear.x = linear_vel
         twist.angular.z = angular_vel
         self.pub_vel.publish(twist)
 

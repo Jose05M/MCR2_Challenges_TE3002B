@@ -1,15 +1,16 @@
-# params.yaml
-# -----------
+# traffic_light_nav.yaml
+# ----------------------
 # All tunable parameters for the MCR2 Half-Term Challenge.
 # Change values here without touching source code.
-# Load via the launch file or:  ros2 run <pkg> <node> --ros-args --params-file params.yaml
+# Load via traffic_light_nav.launch.py or:
+#   ros2 run <pkg> <node> --ros-args --params-file traffic_light_nav.yaml
 
 traffic_light_detector:
   ros__parameters:
     # ---- Vision pipeline --------------------------------------------------
-    kernel_size:       5          # morphological kernel size (px, odd number)
+    kernel_size:       3          # morphological kernel size (px)
     min_blob_area:     200        # minimum contour area (px²) to accept as a blob
-    min_circularity:   0.40       # 4πA/P² — reject non-circular detections
+    min_circularity:   0.95       # 4πA/P² — reject non-circular detections
 
     # ---- HSV ranges are set as code constants (edit traffic_light_detector.py
     #      if the simulator lighting differs significantly from the defaults).
@@ -19,7 +20,7 @@ traffic_light_detector:
     state_topic:       /traffic_light/state
     debug_image:       true        # set false to reduce CPU load in final run
 
-navigation_controller:
+traffic_light_nav_controller:
   ros__parameters:
     # ---- Waypoints (flat list: x0 y0 x1 y1 ...) --------------------------
     # Change these to match your simulation environment.

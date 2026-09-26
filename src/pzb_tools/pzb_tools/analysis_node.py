@@ -43,7 +43,8 @@ class AnalysisNode(Node):
         # CSV FILE
         # =====================================
 
-        self.csv_file = open('/home/ed/ros2_challenge_mcr2/ros2_challenge2/src/mcr2_challenge/media/robot_analysis.csv', 'w')
+        csv_path = self.declare_parameter('csv_path', 'robot_analysis.csv').value
+        self.csv_file = open(csv_path, 'w')
 
         self.csv_file.write(
             'time,x,y,v,w,traffic,enc_r,enc_l,laser\n'
@@ -95,7 +96,7 @@ class AnalysisNode(Node):
             qos_profile_sensor_data
         )
 
-        self.get_logger().info('Analysis node running...')
+        self.get_logger().info(f'Analysis node running... saving to {csv_path}')
 
     # =====================================
     # TIME

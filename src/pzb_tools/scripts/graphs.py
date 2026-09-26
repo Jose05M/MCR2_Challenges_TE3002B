@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import sys
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -8,7 +10,8 @@ import matplotlib.pyplot as plt
 # LOAD CSV
 # =========================================================
 
-df = pd.read_csv("robot_analysis.csv")
+# Usage: python3 graphs.py [robot_analysis.csv]
+df = pd.read_csv(sys.argv[1] if len(sys.argv) > 1 else "robot_analysis.csv")
 
 # =========================================================
 # GET DATA
@@ -136,7 +139,7 @@ print("\n=========================================\n")
 # 1. TRAJECTORY
 # ---------------------------------------------------------
 
-plt.figure(figsize=(8,6))
+plt.figure(figsize=(8, 6))
 
 # Trayectoria real
 plt.plot(x, y, label='Robot Trajectory')
@@ -171,7 +174,7 @@ plt.legend()
 # 2. POSITION ERROR
 # ---------------------------------------------------------
 
-plt.figure(figsize=(8,6))
+plt.figure(figsize=(8, 6))
 
 plt.plot(t, error)
 
@@ -185,7 +188,7 @@ plt.grid(True)
 # 3. LINEAR VELOCITY
 # ---------------------------------------------------------
 
-plt.figure(figsize=(8,6))
+plt.figure(figsize=(8, 6))
 
 plt.plot(t, v)
 
@@ -199,7 +202,7 @@ plt.grid(True)
 # 4. ANGULAR VELOCITY
 # ---------------------------------------------------------
 
-plt.figure(figsize=(8,6))
+plt.figure(figsize=(8, 6))
 
 plt.plot(t, w)
 
@@ -213,7 +216,7 @@ plt.grid(True)
 # 5. CONTROL SMOOTHNESS
 # ---------------------------------------------------------
 
-plt.figure(figsize=(8,6))
+plt.figure(figsize=(8, 6))
 
 plt.plot(dv, label='Δv')
 plt.plot(dw, label='Δw')

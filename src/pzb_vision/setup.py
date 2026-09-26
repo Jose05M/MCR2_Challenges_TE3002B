@@ -1,6 +1,6 @@
 from setuptools import setup
 
-package_name = 'pzb_control'
+package_name = 'pzb_vision'
 
 setup(
     name=package_name,
@@ -14,16 +14,12 @@ setup(
     zip_safe=True,
     maintainer='Jose Eduardo Sanchez Martinez',
     maintainer_email='eduardo.mtz1403@gmail.com',
-    description='Puzzlebot controllers and path generators',
+    description='Puzzlebot computer vision (OpenCV): traffic light and line detection',
     license='Apache-2.0',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'open_loop_path_generator = pzb_control.open_loop_path_generator:main',
-            'open_loop_controller = pzb_control.open_loop_controller:main',
-            'closed_loop_path_generator = pzb_control.closed_loop_path_generator:main',
-            'closed_loop_controller = pzb_control.closed_loop_controller:main',
-            'traffic_light_nav_controller = pzb_control.traffic_light_nav_controller:main',
+            'traffic_light_detector = pzb_vision.traffic_light_detector:main',
         ],
     },
 )
