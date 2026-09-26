@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
+"""
+Line follower controller.
 
+PD controller on /line_error (adaptive Kp for straights and curves, speed ramp,
+slow-down when turning) that also obeys /traffic_light/state.
+"""
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
@@ -7,10 +12,9 @@ from std_msgs.msg import String
 from std_msgs.msg import Float32
 import numpy as np
 
+
 class LineFollowerController(Node):
-    """
-    Point-to-point proportional controller with traffic light awareness.
-    """
+    """PD line-following controller with traffic light awareness."""
 
     def __init__(self):
         super().__init__('line_follower_controller')
@@ -21,12 +25,12 @@ class LineFollowerController(Node):
 
         self.declare_parameter('kp_straight', 0.0015)
         self.declare_parameter('kp_curve', 0.0040)
-        
+
         self.declare_parameter('kd', 0.0030)
         self.declare_parameter('max_angular_vel', 1.5)
-        self.declare_parameter('cmd_vel_topic',    '/cmd_vel')
+        self.declare_parameter('cmd_vel_topic', '/cmd_vel')
         self.declare_parameter('line_error_topic', '/line_error')
-        self.declare_parameter('state_topic',      '/traffic_light/state')
+        self.declare_parameter('state_topic', '/traffic_light/state')
 
         self.linear_speed = self.get_parameter('linear_speed').value
         self.curve_speed = self.get_parameter('curve_speed').value
@@ -37,26 +41,25 @@ class LineFollowerController(Node):
 
         self.kd = self.get_parameter('kd').value
         self.w_max = self.get_parameter('max_angular_vel').value
-        cmd_topic   = self.get_parameter('cmd_vel_topic').value
+        cmd_topic = self.get_parameter('cmd_vel_topic').value
         state_topic = self.get_parameter('state_topic').value
-        line_topic  = self.get_parameter('line_error_topic').value
+        line_topic = self.get_parameter('line_error_topic').value
 
         # State
         self.line_error = 0.0
         self.prev_error = 0.0
-        self.tl_state   = 'UNKNOWN'
+        self.tl_state = 'UNKNOWN'
         self.last_motion_state = ""
         self.current_linear_vel = 0.0
         self.acceleration = 0.01   # rampa de velocidad
         self.curve_state = False
         self.line_lost_threshold = 140
         self.filtered_error = 0.0
-        
 
         # ROS I/O
-        self.pub_vel  = self.create_publisher(Twist, cmd_topic, 10)
-        self.sub_line = self.create_subscription(Float32,line_topic,self._line_callback,1)
-        self.sub_tl   = self.create_subscription(String, state_topic, self._tl_callback, 10)
+        self.pub_vel = self.create_publisher(Twist, cmd_topic, 10)
+        self.sub_line = self.create_subscription(Float32, line_topic, self._line_callback, 1)
+        self.sub_tl = self.create_subscription(String, state_topic, self._tl_callback, 10)
 
         # Control loop at 20 Hz
         self.timer = self.create_timer(0.05, self._control_loop)
@@ -65,7 +68,7 @@ class LineFollowerController(Node):
     # Callbacks
     def _line_callback(self, msg: Float32):
         alpha = 0.5
-        self.filtered_error = (alpha * self.filtered_error +(1 - alpha) * msg.data)
+        self.filtered_error = (alpha * self.filtered_error + (1 - alpha) * msg.data)
         self.line_error = self.filtered_error
 
     def _tl_callback(self, msg: String):
@@ -97,7 +100,7 @@ class LineFollowerController(Node):
         self.prev_error = self.line_error
 
         # Saturation
-        angular_vel = np.clip(angular_vel,-self.w_max,self.w_max)
+        angular_vel = np.clip(angular_vel, -self.w_max, self.w_max)
         angular_vel *= 0.85
 
         # Adaptive Linear Speed
@@ -113,15 +116,15 @@ class LineFollowerController(Node):
 
         elif self.current_linear_vel > target_linear_vel:
             self.current_linear_vel -= self.acceleration
-            self.current_linear_vel = max(self.current_linear_vel,target_linear_vel)
+            self.current_linear_vel = max(self.current_linear_vel, target_linear_vel)
 
         linear_vel = self.current_linear_vel
         if abs(self.line_error) > self.line_lost_threshold:
             linear_vel *= 0.4
 
         # TURN-BASED SPEED REDUCTION
-        turn_factor = 1.0 - min(abs(angular_vel) / self.w_max,1.0)
-        turn_factor = max(turn_factor,0.35)
+        turn_factor = 1.0 - min(abs(angular_vel) / self.w_max, 1.0)
+        turn_factor = max(turn_factor, 0.35)
         linear_vel *= turn_factor
 
         motion_state = ""
@@ -145,14 +148,14 @@ class LineFollowerController(Node):
 
         if self.tl_state == "RED":
             linear_vel = 0.0
+            angular_vel = 0.0
         elif self.tl_state == "YELLOW":
             linear_vel *= 0.5
 
-        twist.linear.x  = linear_vel
+        twist.linear.x = linear_vel
         twist.angular.z = angular_vel
         self.pub_vel.publish(twist)
 
-        #self.get_logger().info(f'Error={self.line_error:.2f} | v={linear_vel:.3f} | w={angular_vel:.3f} | TL={self.tl_state}')
 
 def main(args=None):
     rclpy.init(args=args)

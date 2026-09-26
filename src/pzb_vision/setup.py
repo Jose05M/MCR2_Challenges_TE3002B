@@ -20,6 +20,8 @@ setup(
     entry_points={
         'console_scripts': [
             'traffic_light_detector = pzb_vision.traffic_light_detector:main',
+            'line_detector = pzb_vision.line_detector:main',
+            'usb_camera_publisher = pzb_vision.usb_camera_publisher:main',
         ],
     },
 )

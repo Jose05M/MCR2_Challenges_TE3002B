@@ -24,3 +24,4 @@ src/yolo_msg/
 src/trajectory_controller/
 src/puzzlebot_control/
 src/mcr2_challenge/
+src/puzzlebot_line_follower/
