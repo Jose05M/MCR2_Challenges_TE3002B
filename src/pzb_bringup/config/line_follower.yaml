@@ -25,6 +25,8 @@ traffic_light_detector:
 line_detector:
   ros__parameters:
     camera_topic:      /video_source/raw
+    compressed:        false       # raw colour Image
+    crop_percent:      0.25        # side crop
     line_error_topic:  /line_error
     debug_view:        true        # OpenCV windows with the scanlines
 

@@ -4,7 +4,11 @@ Line detector (scanlines).
 
 Thresholds the camera image (Otsu), scans 5 weighted rows near the bottom and
 publishes on /line_error the pixel offset between the image centre and the
-centre of the black line.
+centre of the black line. When the bottom band has almost no line (zebra
+crossing) it publishes True on /intersection_detected.
+
+Input: raw Image (compressed: false) or the JPEG CompressedImage produced by
+image_compressor (compressed: true).
 """
 import rclpy
 import cv2
@@ -12,7 +16,18 @@ import numpy as np
 
 from rclpy.node import Node
 from sensor_msgs.msg import Image
-from std_msgs.msg import Float32
+from sensor_msgs.msg import CompressedImage
+from std_msgs.msg import Float32, Bool
+
+from rclpy.qos import QoSProfile
+from rclpy.qos import ReliabilityPolicy
+from rclpy.qos import HistoryPolicy
+
+qos = QoSProfile(
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1
+)
 
 
 class LineDetector(Node):
@@ -22,17 +37,28 @@ class LineDetector(Node):
         super().__init__('line_detector')
 
         # PARAMETERS
-        self.declare_parameter('camera_topic', '/video_source/raw')
+        self.declare_parameter('camera_topic', '/video_source/yolo/compressed')
+        self.declare_parameter('compressed', True)
         self.declare_parameter('line_error_topic', '/line_error')
+        self.declare_parameter('intersection_topic', '/intersection_detected')
         self.declare_parameter('debug_view', True)
+        self.declare_parameter('crop_percent', 0.20)
 
         camera_topic = self.get_parameter('camera_topic').value
+        self.compressed = self.get_parameter('compressed').value
         error_topic = self.get_parameter('line_error_topic').value
+        intersection_topic = self.get_parameter('intersection_topic').value
         self.debug_view = self.get_parameter('debug_view').value
+        self.crop_percent = self.get_parameter('crop_percent').value
 
         # ROS
-        self.sub = self.create_subscription(Image, camera_topic, self.image_callback, 10)
+        if self.compressed:
+            self.sub = self.create_subscription(
+                CompressedImage, camera_topic, self.image_callback, qos)
+        else:
+            self.sub = self.create_subscription(Image, camera_topic, self.image_callback, 10)
         self.pub_error = self.create_publisher(Float32, error_topic, 10)
+        self.pub_intersection = self.create_publisher(Bool, intersection_topic, 10)
 
         # INTERNAL STATE
         self.last_error = 0.0
@@ -40,14 +66,17 @@ class LineDetector(Node):
 
     # IMAGE CALLBACK
     def image_callback(self, msg):
-        frame = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, 3))
+        if self.compressed:
+            np_arr = np.frombuffer(msg.data, np.uint8)
+            frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        else:
+            frame = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, 3))
         frame = cv2.resize(frame, (640, 480))
 
         height, width = frame.shape[:2]
 
         # ROI
-        crop_percent = 0.25
-        crop_x = int(width * crop_percent)
+        crop_x = int(width * self.crop_percent)
 
         roi = frame[
             :,
@@ -64,6 +93,13 @@ class LineDetector(Node):
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (15, 5))
         binary = cv2.erode(binary, kernel, iterations=3)
         binary = cv2.dilate(binary, kernel, iterations=3)
+
+        # ROI PARA DETECTAR INTERSECCIÓN
+        lost_roi = binary[int(roi_height * 0.88):, :]
+        white_pixels = cv2.countNonZero(lost_roi)
+        total_pixels = (lost_roi.shape[0] * lost_roi.shape[1])
+        white_ratio = white_pixels / total_pixels
+        line_lost = white_ratio < 0.1
 
         # SCANLINES
         scan_rows = [int(roi_height * 0.80), int(roi_height * 0.84),
@@ -98,6 +134,11 @@ class LineDetector(Node):
 
                     # ignorar ruido pequeño
                     if segment_size < 20:
+                        continue
+
+                    segment_width = (segment[-1] - segment[0])
+                    # ignorar blobs gigantes
+                    if segment_width > (roi_width * 0.7):
                         continue
 
                     # elegir el más grande
@@ -135,21 +176,24 @@ class LineDetector(Node):
                     cv2.circle(output, (center_line, y), 4, (0, 0, 255), -1)
 
         # CALCULAR ERROR FINAL
-        final_error = self.last_error
+        if line_lost:
+            final_error = 0.0
 
-        if len(errors) > 0:
+        else:
+            final_error = self.last_error
 
-            final_error = np.average(errors, weights=valid_weights)
-
-            # SMOOTHING
-            # alpha = 0.7 #0.5
-            # final_error = (alpha * self.last_error +(1 - alpha) * final_error)
-            self.last_error = final_error
+            if len(errors) > 0:
+                final_error = np.average(errors, weights=valid_weights)
+                self.last_error = final_error
 
         # PUBLICAR ERROR
         error_msg = Float32()
         error_msg.data = float(final_error)
         self.pub_error.publish(error_msg)
+
+        intersection_msg = Bool()
+        intersection_msg.data = line_lost
+        self.pub_intersection.publish(intersection_msg)
 
         # DEBUG
         if self.debug_view:
@@ -157,6 +201,19 @@ class LineDetector(Node):
             cv2.line(output, (center_image, 0), (center_image, roi_height), (255, 255, 255), 2)
             cv2.putText(output, f'Error: {final_error:.1f}', (20, 40),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+            # dibujar ROI de intersección
+            cv2.rectangle(output, (0, int(roi_height * 0.88)), (roi_width, roi_height),
+                          (0, 255, 255), 2)
+
+            # mostrar ratio
+            cv2.putText(output, f'LINE: {white_ratio:.2f}', (20, 160),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
+
+            # mostrar detección
+            if line_lost:
+                cv2.putText(output, 'LINE LOST', (20, 200),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)
+
             cv2.imshow("ROI", output)
             cv2.imshow("Binary", binary)
             cv2.imshow("real", frame)
