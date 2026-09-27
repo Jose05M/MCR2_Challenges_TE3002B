@@ -22,32 +22,32 @@ class ClosedLoopController(Node):
     def __init__(self):
         super().__init__('closed_loop_controller')
 
-        # Ganancias
+        # Gains
         self.Kv = self.declare_parameter('Kv', 0.5).value
         self.Kw = self.declare_parameter('Kw', 0.5).value
 
-        # Rampa lineal
+        # Linear ramp
         self.V_actual = 0.0
         self.max_accel = self.declare_parameter('max_accel', 0.3).value
 
-        # Límites de velocidad
+        # Speed limits
         self.V_min = self.declare_parameter('v_min', 0.07).value
         self.V_max = self.declare_parameter('v_max', 0.40).value
         self.W_fixed = self.declare_parameter('w_fixed', 1.0).value
 
-        # Umbrales
+        # Thresholds
         self.align_threshold = self.declare_parameter('align_threshold', 0.05).value
         self.goal_threshold = self.declare_parameter('goal_threshold', 0.10).value
         self.goal_reached_d = self.declare_parameter('goal_reached_dist', 0.04).value
 
-        # Girar a la orientación final del goal al llegar a su posición
+        # Rotate to the goal's final heading after reaching its position
         self.align_final_heading = self.declare_parameter('align_final_heading', True).value
 
-        # Estado
+        # State
         self.phase = 'wait'   # wait | rotate | advance
         self.finished = False
         self.returning_home = False
-        self.current_goal = None     # Goal msg activo
+        self.current_goal = None     # active Goal msg
 
         # Pose
         self.x = 0.0
@@ -58,7 +58,7 @@ class ClosedLoopController(Node):
         self.first = True
         self.last_time = None
 
-        # Suscripciones
+        # Subscriptions
         self.sub_odom = self.create_subscription(
             Odometry, 'odom', self.odom_callback, qos.qos_profile_sensor_data)
 
@@ -108,7 +108,7 @@ class ClosedLoopController(Node):
         dt = (now - self.last_time).nanoseconds * 1e-9
         self.last_time = now
 
-        # Sin goal todavía
+        # No goal yet
         if self.phase == 'wait' or self.current_goal is None:
             return
 
@@ -116,7 +116,7 @@ class ClosedLoopController(Node):
             self.stop_robot()
             return
 
-        # ── FASE FINAL: ORIENTACIÓN DEL GOAL ──────────────────────
+        # ── FINAL PHASE: GOAL ORIENTATION ────────────────────────
         if self.returning_home:
             e_theta_final = wrap_to_pi(self.current_goal.theta - self.theta)
             cmd = Twist()
@@ -144,7 +144,7 @@ class ClosedLoopController(Node):
 
         cmd = Twist()
 
-        # ── FASE 1: ROTAR ──────────────────────────────────────────
+        # ── PHASE 1: ROTATE ──────────────────────────────────────────
         if self.phase == 'rotate':
             if abs(e_theta) > self.align_threshold:
                 cmd.angular.z = self.W_fixed * np.sign(e_theta)
@@ -154,11 +154,11 @@ class ClosedLoopController(Node):
                 self.phase = 'advance'
                 self.V_actual = 0.0
 
-        # ── FASE 2: AVANZAR ────────────────────────────────────────
+        # ── PHASE 2: ADVANCE ────────────────────────────────────────
         if self.phase == 'advance':
             if e_d < self.goal_threshold:
-                # Frenar con rampa; sigue a V_min hasta entrar a goal_reached_d,
-                # si no, el robot puede detenerse antes del goal y nunca terminar
+                # Brake with the ramp; keep creeping at V_min until inside goal_reached_d,
+                # otherwise the robot can stop short of the goal and never finish
                 v_floor = 0.0 if e_d < self.goal_reached_d else self.V_min
                 self.V_actual = max(self.V_actual - self.max_accel * dt, v_floor)
                 cmd.linear.x = self.apply_linear_deadzone(self.V_actual)

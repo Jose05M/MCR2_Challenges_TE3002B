@@ -52,7 +52,7 @@ for i in range(len(x)):
 
     error.append(e)
 
-    # Cambiar al siguiente waypoint
+    # Move on to the next waypoint
     if e < target_threshold:
 
         if current_target < len(targets) - 1:
@@ -141,7 +141,7 @@ print("\n=========================================\n")
 
 plt.figure(figsize=(8, 6))
 
-# Trayectoria real
+# Actual trajectory
 plt.plot(x, y, label='Robot Trajectory')
 
 # Waypoints

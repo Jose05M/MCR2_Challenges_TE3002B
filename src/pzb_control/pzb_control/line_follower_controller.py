@@ -51,7 +51,7 @@ class LineFollowerController(Node):
         self.tl_state = 'UNKNOWN'
         self.last_motion_state = ""
         self.current_linear_vel = 0.0
-        self.acceleration = 0.01   # rampa de velocidad
+        self.acceleration = 0.01   # speed ramp step
         self.curve_state = False
         self.line_lost_threshold = 140
         self.filtered_error = 0.0
@@ -81,9 +81,9 @@ class LineFollowerController(Node):
         curve_detected = (abs(self.line_error) > self.curve_threshold)
         if curve_detected != self.curve_state:
             if curve_detected:
-                self.get_logger().info("↩️ Curva detectada")
+                self.get_logger().info("↩️ Curve detected")
             else:
-                self.get_logger().info("➡️ Recta detectada")
+                self.get_logger().info("➡️ Straight section detected")
             self.curve_state = curve_detected
 
         # ADAPTIVE KP
@@ -130,18 +130,18 @@ class LineFollowerController(Node):
         motion_state = ""
 
         if self.tl_state == "RED":
-            motion_state = "🔴 Rojo detectado -> detenido"
+            motion_state = "🔴 Red light -> stopped"
         elif self.tl_state == "YELLOW":
-            motion_state = "🟡 Amarillo detectado -> reduciendo velocidad"
+            motion_state = "🟡 Yellow light -> slowing down"
         elif self.tl_state == "GREEN":
             if linear_vel > 0.01:
-                motion_state = f"🟢 Verde detectado -> avanzando ({linear_vel:.2f} m/s)"
+                motion_state = f"🟢 Green light -> moving ({linear_vel:.2f} m/s)"
             else:
-                motion_state = "🟢 Verde detectado -> alineando"
+                motion_state = "🟢 Green light -> aligning"
         else:
-            motion_state = "⚪ Buscando semaforo"
+            motion_state = "⚪ Looking for a traffic light"
 
-        # Imprimir solo si cambia el estado
+        # Log only when the state changes
         if motion_state != self.last_motion_state:
             self.get_logger().info(motion_state)
             self.last_motion_state = motion_state

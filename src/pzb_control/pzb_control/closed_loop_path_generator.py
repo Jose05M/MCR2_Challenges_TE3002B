@@ -7,7 +7,7 @@ from std_msgs.msg import Bool
 from pzb_interfaces.msg import Goal
 
 
-# Distancia mínima que el robot puede alcanzar con control estable
+# Minimum distance the robot can reach with stable control
 MIN_REACHABLE_DIST = 0.05
 
 
@@ -16,7 +16,7 @@ class PathGenerator(Node):
     def __init__(self):
         super().__init__('closed_loop_path_generator')
 
-        # Lista de waypoints: (x, y, theta_final), definidos en el YAML
+        # Waypoints (x, y, final theta), defined in the YAML
         px = self.declare_parameter('points_x', [2.0, 2.0, 0.0, 0.0]).value
         py = self.declare_parameter('points_y', [0.0, 2.0, 2.0, 0.0]).value
         pth = self.declare_parameter('points_theta', [0.0, 0.0, 0.0, 0.0]).value
@@ -25,28 +25,28 @@ class PathGenerator(Node):
 
         self.waypoints = list(zip(px, py, pth))
         self.goal_idx = 0
-        self.waiting = False   # esperando confirmación del controlador
-        self.prev_x = 0.0     # el recorrido empieza en el origen
+        self.waiting = False   # waiting for the controller confirmation
+        self.prev_x = 0.0     # the path starts at the origin
         self.prev_y = 0.0
 
-        # Publisher y suscripción
+        # Publisher and subscription
         self.pub_goal = self.create_publisher(Goal, 'goal', 10)
 
         self.sub_reached = self.create_subscription(
             Bool, 'goal_reached', self.reached_callback, 10)
 
-        # Timer de arranque — espera 1s para que el controlador esté listo
+        # Startup timer — waits 1 s so the controller is ready
         self.startup_timer = self.create_timer(1.0, self.send_first_goal)
 
         self.get_logger().info("Path Generator Node Started.")
 
     def is_reachable(self, x, y, theta):
         """
-        Verifica si el punto es alcanzable.
+        Check whether the point is reachable.
 
-        Criterios:
-        - Distancia desde el goal anterior > min_reachable_dist
-        - El ángulo theta está en [-pi, pi]
+        Criteria:
+        - Distance from the previous goal > min_reachable_dist
+        - theta is in [-pi, pi]
         """
         dist = np.sqrt((x - self.prev_x)**2 + (y - self.prev_y)**2)
         if dist < self.min_reachable_dist:
@@ -58,7 +58,7 @@ class PathGenerator(Node):
         return True
 
     def send_first_goal(self):
-        # Este timer solo corre una vez
+        # This timer only runs once
         self.startup_timer.cancel()
         self.send_next_goal()
 

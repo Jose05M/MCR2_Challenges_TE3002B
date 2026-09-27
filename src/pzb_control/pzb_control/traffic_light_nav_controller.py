@@ -91,7 +91,7 @@ class NavigationController(Node):
         self.tl_state = 'UNKNOWN'
         self.last_motion_state = ""
         self.current_linear_vel = 0.0
-        self.acceleration = 0.01   # rampa de velocidad
+        self.acceleration = 0.01   # speed ramp step
 
         # ---- ROS I/O -------------------------------------------------------
         self.pub_vel = self.create_publisher(Twist, cmd_topic, 10)
@@ -185,7 +185,7 @@ class NavigationController(Node):
                 self.v_max
             )
 
-        # -------- Rampa de aceleración ----------
+        # -------- Acceleration ramp ----------
         if self.current_linear_vel < target_linear_vel:
             self.current_linear_vel += self.acceleration
             self.current_linear_vel = min(
@@ -208,21 +208,21 @@ class NavigationController(Node):
         motion_state = ""
 
         if self.tl_state == "RED":
-            motion_state = "🔴 Rojo detectado -> detenido"
+            motion_state = "🔴 Red light -> stopped"
 
         elif self.tl_state == "YELLOW":
-            motion_state = "🟡 Amarillo detectado -> reduciendo velocidad"
+            motion_state = "🟡 Yellow light -> slowing down"
 
         elif self.tl_state == "GREEN":
             if linear_vel > 0.01:
-                motion_state = f"🟢 Verde detectado -> avanzando ({linear_vel:.2f} m/s)"
+                motion_state = f"🟢 Green light -> moving ({linear_vel:.2f} m/s)"
             else:
-                motion_state = "🟢 Verde detectado -> alineando"
+                motion_state = "🟢 Green light -> aligning"
 
         else:
-            motion_state = "⚪ Buscando semaforo"
+            motion_state = "⚪ Looking for a traffic light"
 
-        # Imprimir solo si cambia el estado
+        # Log only when the state changes
         if motion_state != self.last_motion_state:
             self.get_logger().info(motion_state)
             self.last_motion_state = motion_state
