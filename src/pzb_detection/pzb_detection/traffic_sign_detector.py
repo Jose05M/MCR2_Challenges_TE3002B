@@ -3,7 +3,11 @@ Traffic sign detector (YOLOv8).
 
 Runs the trained YOLOv8 model on the camera image, keeps the closest sign within
 an area range, corrects LEFT/RIGHT with the arrow shape, and publishes the sign
-label on /traffic_signals/state when it changes.
+label on state_topic once it has been seen 3 times in a row.
+
+Input: raw Image (compressed: false; resized to 416x416 and converted to gray
+here, as in week 7) or the 416x416 gray JPEG from image_compressor
+(compressed: true, final challenge).
 """
 import os
 
@@ -11,10 +15,21 @@ import rclpy
 from ament_index_python.packages import get_package_share_directory
 from rclpy.node import Node
 from sensor_msgs.msg import Image
+from sensor_msgs.msg import CompressedImage
 from std_msgs.msg import String
 from ultralytics import YOLO
 import cv2
 import numpy as np
+
+from rclpy.qos import QoSProfile
+from rclpy.qos import ReliabilityPolicy
+from rclpy.qos import HistoryPolicy
+
+qos = QoSProfile(
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1
+)
 
 # CORRECCIÓN LEFT / RIGHT
 
@@ -62,124 +77,158 @@ class YoloInference(Node):
         # Default: the model installed with this package (models/best_1.pt)
         default_model = os.path.join(
             get_package_share_directory('pzb_detection'), 'models', 'best_1.pt')
-        model_path = os.path.expanduser(
-            self.declare_parameter('model_path', default_model).value)
+        self.declare_parameter('model_path', default_model)
+        self.declare_parameter('camera_topic', '/video_source/yolo/compressed')
+        self.declare_parameter('compressed', True)
+        self.declare_parameter('state_topic', '/traffic_sign/state')
+        self.declare_parameter('min_area', 8000)
+        self.declare_parameter('max_area', 80000)
+        self.declare_parameter('debug_view', True)
+
+        self.detect_counter = 0
+        self.required_detections = 3
+        self.candidate_label = ""
+        self.img = None
+        self.processing = False
+
+        # -------------------------------------------------
+        # GET PARAMETERS
+        # -------------------------------------------------
+
+        model_path = os.path.expanduser(self.get_parameter('model_path').value)
+        camera_topic = self.get_parameter('camera_topic').value
+        self.compressed = self.get_parameter('compressed').value
+        state_topic = self.get_parameter('state_topic').value
+        self.min_area = self.get_parameter('min_area').value
+        self.max_area = self.get_parameter('max_area').value
+        self.debug_view = self.get_parameter('debug_view').value
+
         if not os.path.isfile(model_path):
             self.get_logger().error(f'YOLO model not found: {model_path}')
             raise FileNotFoundError(model_path)
-        self.debug_view = self.declare_parameter('debug_view', True).value
         self.get_logger().info(f'Loading YOLO model: {model_path}')
         self.model = YOLO(model_path)
-
-        self.img = None
-        self.valid_img = False
         self.last_state = ""
 
-        self.sub = self.create_subscription(Image, '/video_source/raw', self.camera_callback, 10)
-        self.state_pub = self.create_publisher(String, '/traffic_signals/state', 10)
+        self.state_pub = self.create_publisher(String, state_topic, 10)
+        if self.compressed:
+            self.sub = self.create_subscription(
+                CompressedImage, camera_topic, self.camera_callback, qos)
+        else:
+            self.sub = self.create_subscription(Image, camera_topic, self.camera_callback, 10)
 
-        self.timer = self.create_timer(1 / 20, self.timer_callback)
+        self.timer = self.create_timer(1 / 5, self.timer_callback)
 
     def camera_callback(self, msg):
-        try:
-            frame = np.frombuffer(msg.data, dtype=np.uint8).reshape((msg.height, msg.width, 3))
-            self.img = frame.copy()
-            self.valid_img = True
-
-        except Exception as e:
-            self.get_logger().info(f'Image conversion failed: {e}')
+        if self.compressed:
+            np_arr = np.frombuffer(msg.data, np.uint8)
+            frame = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            if frame is None:
+                return
+            self.img = frame
+        else:
+            try:
+                frame = np.frombuffer(msg.data, dtype=np.uint8).reshape(
+                    (msg.height, msg.width, 3))
+                self.img = frame.copy()
+            except Exception as e:
+                self.get_logger().info(f'Image conversion failed: {e}')
 
     def timer_callback(self):
-        if not self.valid_img:
+        if self.img is None or self.processing:
             return
+        self.processing = True
 
-        # RESIZE 416x416
-        frame = cv2.resize(self.img, (416, 416))
+        try:
+            if self.compressed:
+                # image_compressor already sends 416x416 gray
+                frame = self.img
+            else:
+                # RESIZE 416x416
+                frame = cv2.resize(self.img, (416, 416))
+                # GRAYSCALE, YOLO necesita 3 canales
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                frame = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
-        # GRAYSCALE
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            # INFERENCIA
+            results = self.model(frame, conf=0.4, imgsz=416, verbose=False)
 
-        # YOLO necesita 3 canales
-        gray_3ch = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+            best_label = None
+            best_area = 0
 
-        # INFERENCIA
-        results = self.model(gray_3ch, conf=0.4, imgsz=416, verbose=False)
+            # DETECCIONES
+            for r in results:
+                for box in r.boxes:
 
-        best_label = None
-        best_area = 0
+                    x1, y1, x2, y2 = map(int, box.xyxy[0])
+                    cls = int(box.cls[0])
 
-        # DETECCIONES
-        for r in results:
-            for box in r.boxes:
+                    label = self.model.names[cls]
 
-                x1, y1, x2, y2 = map(int, box.xyxy[0])
-                cls = int(box.cls[0])
+                    # ÁREA
+                    w = x2 - x1
+                    h = y2 - y1
+                    area = w * h
 
-                label = self.model.names[cls]
+                    if area < self.min_area:
+                        continue
 
-                # ÁREA
-                w = x2 - x1
-                h = y2 - y1
-                area = w * h
-                MIN_AREA = 30000
-                MAX_AREA = 80000
+                    if area > self.max_area:
+                        continue
 
-                if area < MIN_AREA:
-                    continue
+                    # ROI
+                    roi = frame[y1:y2, x1:x2]
 
-                if area > MAX_AREA:
-                    continue
+                    if roi.size == 0:
+                        continue
 
-                self.get_logger().info(f"{label} area = {area}")
+                    # CORRECCIÓN LEFT / RIGHT
+                    if label == "LEFT" or label == "RIGHT":
+                        corrected = detect_arrow_direction(roi)
 
-                # ROI
-                roi = frame[y1:y2, x1:x2]
+                        if corrected != "UNKNOWN":
+                            label = corrected
 
-                if roi.size == 0:
-                    continue
+                    # DETECCIÓN MÁS CERCANA
+                    if area > best_area:
+                        best_area = area
+                        best_label = label
 
-                # CORRECCIÓN LEFT / RIGHT
-                if label == "LEFT" or label == "RIGHT":
-                    corrected = detect_arrow_direction(roi)
+            if self.debug_view:
 
-                    if corrected != "UNKNOWN":
-                        label = corrected
+                annotated_frame = results[0].plot()
 
-                # DETECCIÓN MÁS CERCANA
-                if area > best_area:
-                    best_area = area
-                    best_label = label
+                if best_label is not None:
+                    cv2.putText(annotated_frame, f"FRONT: {best_label}", (20, 40),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 3)
 
-        # FRAME ANOTADO
-        annotated_frame = results[0].plot()
+                cv2.imshow("YOLO Detection", annotated_frame)
+                cv2.waitKey(1)
 
-        # TEXTO FRONT
-        if best_label is not None:
+            if best_label is not None:
 
-            cv2.putText(
-                annotated_frame,
-                f"FRONT: {best_label}",
-                (20, 40),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                1,
-                (0, 255, 0),
-                3
-            )
+                # misma detección consecutiva
+                if best_label == self.candidate_label:
+                    self.detect_counter += 1
+                else:
+                    self.candidate_label = best_label
+                    self.detect_counter = 1
 
-        if self.debug_view:
-            cv2.imshow(
-                "YOLO Detection",
-                annotated_frame
-            )
+                # publicar solo si aparece N veces
+                if (self.detect_counter >= self.required_detections
+                        and best_label != self.last_state):
 
-            cv2.waitKey(1)
-
-        if best_label is not None and best_label != self.last_state:
-            state_msg = String()
-            state_msg.data = best_label
-            self.state_pub.publish(state_msg)
-            self.last_state = best_label
-            self.get_logger().info(f"Published state: {best_label}")
+                    state_msg = String()
+                    state_msg.data = best_label
+                    self.state_pub.publish(state_msg)
+                    self.last_state = best_label
+                    self.get_logger().info(
+                        f"Published state: {best_label}"
+                    )
+            else:
+                self.detect_counter = 0
+        finally:
+            self.processing = False
 
 
 def main(args=None):

@@ -24,6 +24,12 @@ traffic_light_detector:
 
 traffic_sign_detector:
   ros__parameters:
-    debug_view:        true        # OpenCV window with the YOLO detections
+    
+    camera_topic:        /video_source/raw
+    compressed:          false                    # raw colour Image, resized + gray here
+    state_topic:         /traffic_signals/state   # final: /traffic_sign/state
+    min_area:            30000                    # px² at 416x416 (final: 8000)
+    max_area:            80000
+    debug_view:          true                     # OpenCV window with the YOLO detections
     # Full path to the YOLO model (.pt). Change only this value to use another model.
-    model_path:        /home/ed/ros2_challenge_mcr2/ros2_challenge2/src/pzb_detection/models/best_1.pt
+    model_path:          /home/ed/ros2_challenge_mcr2/ros2_challenge2/src/pzb_detection/models/best_1.pt
