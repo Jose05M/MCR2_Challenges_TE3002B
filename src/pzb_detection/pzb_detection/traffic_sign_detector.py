@@ -31,7 +31,7 @@ qos = QoSProfile(
     depth=1
 )
 
-# CORRECCIÓN LEFT / RIGHT
+# LEFT / RIGHT CORRECTION
 
 
 def detect_arrow_direction(roi):
@@ -67,10 +67,8 @@ def detect_arrow_direction(roi):
 
 class YoloInference(Node):
 
-    # best-> normal, anterior.
-    # best1-> gray,ruido
-    # best2 _gray, sin ruido
-    # best3 -> color
+    # Trained models: best -> normal (previous one), best1 -> gray + noise,
+    # best2 -> gray without noise, best3 -> colour
     def __init__(self):
         super().__init__('traffic_sign_detector')
         # model_path: full path to the .pt file, set in the YAML.
@@ -146,17 +144,17 @@ class YoloInference(Node):
             else:
                 # RESIZE 416x416
                 frame = cv2.resize(self.img, (416, 416))
-                # GRAYSCALE, YOLO necesita 3 canales
+                # GRAYSCALE, YOLO needs 3 channels
                 gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                 frame = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
 
-            # INFERENCIA
+            # INFERENCE
             results = self.model(frame, conf=0.4, imgsz=416, verbose=False)
 
             best_label = None
             best_area = 0
 
-            # DETECCIONES
+            # DETECTIONS
             for r in results:
                 for box in r.boxes:
 
@@ -165,7 +163,7 @@ class YoloInference(Node):
 
                     label = self.model.names[cls]
 
-                    # ÁREA
+                    # AREA
                     w = x2 - x1
                     h = y2 - y1
                     area = w * h
@@ -182,14 +180,14 @@ class YoloInference(Node):
                     if roi.size == 0:
                         continue
 
-                    # CORRECCIÓN LEFT / RIGHT
+                    # LEFT / RIGHT CORRECTION
                     if label == "LEFT" or label == "RIGHT":
                         corrected = detect_arrow_direction(roi)
 
                         if corrected != "UNKNOWN":
                             label = corrected
 
-                    # DETECCIÓN MÁS CERCANA
+                    # CLOSEST DETECTION
                     if area > best_area:
                         best_area = area
                         best_label = label
@@ -207,14 +205,14 @@ class YoloInference(Node):
 
             if best_label is not None:
 
-                # misma detección consecutiva
+                # same consecutive detection
                 if best_label == self.candidate_label:
                     self.detect_counter += 1
                 else:
                     self.candidate_label = best_label
                     self.detect_counter = 1
 
-                # publicar solo si aparece N veces
+                # publish only after N consecutive detections
                 if (self.detect_counter >= self.required_detections
                         and best_label != self.last_state):
 

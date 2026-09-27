@@ -2,17 +2,17 @@
 """
 Traffic light detector.
 
-Pipeline completo basado en MCR2 OpenCV:
-  1. Gaussian blur          — reducción de ruido
-  2. BGR -> HSV             — espacio de color para segmentación
-  3. inRange por color      — máscaras binarias (rojo doble rango, amarillo, verde)
-  4. bitwise_or / AND       — combinar máscaras de rojo
-  5. Candidate mask         — brillo + saturación (bitwise_and)
-  6. MORPH_OPEN + CLOSE     — limpieza morfológica
-  7. findContours           — detección de blobs
-  8. Filtros: área, circularidad, dominancia en ROI
-  9. SimpleBlobDetector     — segunda pasada para confirmar
- 10. State machine          — red_lock: activa con RED, libera con GREEN
+Full pipeline based on the MCR2 OpenCV material:
+  1. Gaussian blur          — noise reduction
+  2. BGR -> HSV             — colour space for segmentation
+  3. inRange per colour     — binary masks (red in two ranges, yellow, green)
+  4. bitwise_or / AND       — combine the red masks
+  5. Candidate mask         — brightness + saturation (bitwise_and)
+  6. MORPH_OPEN + CLOSE     — morphological cleaning
+  7. findContours           — blob detection
+  8. Filters: area, circularity, colour dominance in the ROI
+  9. SimpleBlobDetector     — second pass to confirm
+ 10. State machine          — red_lock: set by RED, released by GREEN
 """
 
 import rclpy
@@ -76,7 +76,7 @@ class TrafficLightDetector(Node):
         self.sub_cam = self.create_subscription(
             Image, cam_topic, self._image_callback, 10)
 
-        # SimpleBlobDetector — segunda pasada de confirmación
+        # SimpleBlobDetector — second confirmation pass
         params = cv2.SimpleBlobDetector_Params()
         params.minThreshold = 30
         params.maxThreshold = 255
@@ -97,29 +97,29 @@ class TrafficLightDetector(Node):
         self.blob_detector = cv2.SimpleBlobDetector_create(params)
 
         self.get_logger().info(
-            f'TrafficLightDetector listo — escuchando en {cam_topic}')
+            f'TrafficLightDetector ready — listening on {cam_topic}')
 
     # -----------------------------------------------------------------------
-    # Paso 3-4: máscaras de color
+    # Steps 3-4: colour masks
     # -----------------------------------------------------------------------
     def _build_masks(self, hsv):
         mask_r1 = cv2.inRange(hsv, RED_LOWER_1,  RED_UPPER_1)
         mask_r2 = cv2.inRange(hsv, RED_LOWER_2,  RED_UPPER_2)
         mask_y = cv2.inRange(hsv, YELLOW_LOWER, YELLOW_UPPER)
         mask_g = cv2.inRange(hsv, GREEN_LOWER,  GREEN_UPPER)
-        # bitwise_or para unir los dos rangos de rojo
+        # bitwise_or to join the two red ranges
         mask_r = cv2.bitwise_or(mask_r1, mask_r2)
         return mask_r, mask_y, mask_g
 
     # -----------------------------------------------------------------------
-    # Paso 5-6: candidate mask + morfología
+    # Steps 5-6: candidate mask + morphology
     # -----------------------------------------------------------------------
     def _build_candidate(self, hsv):
-        # bitwise_and entre brillo y saturación — candidate mask
+        # bitwise_and of brightness and saturation — candidate mask
         bright = cv2.inRange(hsv[:, :, 2],  80, 255)
         sat = cv2.inRange(hsv[:, :, 1],  50, 255)
         candidate = cv2.bitwise_and(bright, sat)
-        # MORPH_OPEN elimina ruido, MORPH_CLOSE cierra huecos
+        # MORPH_OPEN removes noise, MORPH_CLOSE fills holes
         kernel = np.ones((self.kernel_size, self.kernel_size), np.uint8)
         candidate = cv2.morphologyEx(candidate, cv2.MORPH_OPEN,  kernel)
         candidate = cv2.morphologyEx(candidate, cv2.MORPH_CLOSE, kernel)
@@ -142,18 +142,18 @@ class TrafficLightDetector(Node):
             if perim == 0:
                 continue
 
-            # Circularidad
+            # Circularity
             circularity = (4.0 * math.pi * area) / (perim ** 2)
             if circularity < self.min_circ:
                 continue
 
-            # Aspect ratio — rechaza objetos alargados
+            # Aspect ratio — rejects elongated objects
             x, y, w, h = cv2.boundingRect(cnt)
             aspect = max(w, h) / (min(w, h) + 1e-5)
             if aspect > MAX_ASPECT_RATIO:
                 continue
 
-            # Convexity — rechaza formas irregulares
+            # Convexity — rejects irregular shapes
             hull = cv2.convexHull(cnt)
             hull_area = cv2.contourArea(hull)
             if hull_area == 0:
@@ -161,7 +161,7 @@ class TrafficLightDetector(Node):
             if (area / hull_area) < MIN_CONVEXITY:
                 continue
 
-            # Dominancia de color dentro del blob
+            # Colour dominance inside the blob
             roi_cand = candidate[y:y+h, x:x+w]
             roi_r = mask_r[y:y+h, x:x+w]
             roi_y = mask_y[y:y+h, x:x+w]
@@ -197,7 +197,7 @@ class TrafficLightDetector(Node):
         return best_color, best_cnt
 
     # -----------------------------------------------------------------------
-    # Paso 9: confirmación con SimpleBlobDetector (fallback)
+    # Step 9: confirmation with SimpleBlobDetector (fallback)
     # -----------------------------------------------------------------------
     def _confirm_with_blob_detector(self, mask_r, mask_y, mask_g):
         best_color = None
@@ -240,32 +240,32 @@ class TrafficLightDetector(Node):
         frame = np.frombuffer(msg.data, dtype=np.uint8).reshape(
             (msg.height, msg.width, 3))
 
-        # Paso 1: Gaussian blur
+        # Step 1: Gaussian blur
         blurred = cv2.GaussianBlur(frame, (5, 5), 0)
 
-        # Paso 2: BGR -> HSV
+        # Step 2: BGR -> HSV
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
 
-        # Pasos 3-4: máscaras de color
+        # Steps 3-4: colour masks
         mask_r, mask_y, mask_g = self._build_masks(hsv)
 
-        # Pasos 5-6: candidate mask + morfología
+        # Steps 5-6: candidate mask + morphology
         candidate = self._build_candidate(hsv)
 
-        # Pasos 7-8: contornos + dominancia
+        # Steps 7-8: contours + dominance
         best_color, best_cnt = self._best_blob_contours(
             candidate, mask_r, mask_y, mask_g)
 
-        # Paso 9: fallback con SimpleBlobDetector si contornos no encontró nada
+        # Step 9: SimpleBlobDetector fallback if the contours found nothing
         if best_color is None:
             best_color = self._confirm_with_blob_detector(mask_r, mask_y, mask_g)
 
-        # Paso 11: state machine
+        # Step 10: state machine
         state = self._update_state(best_color)
 
         if state != self.current_state:
             self.get_logger().info(
-                f'Estado semáforo: {self.current_state} → {state}')
+                f'Traffic light state: {self.current_state} → {state}')
             self.current_state = state
 
         out_msg = String()
@@ -278,7 +278,7 @@ class TrafficLightDetector(Node):
             cv2.waitKey(1)
 
     # -----------------------------------------------------------------------
-    # Visualización
+    # Visualisation
     # -----------------------------------------------------------------------
     def _annotate_frame(self, frame, best_color, best_cnt, state):
         out = frame.copy()

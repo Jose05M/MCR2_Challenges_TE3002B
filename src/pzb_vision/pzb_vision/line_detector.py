@@ -94,7 +94,7 @@ class LineDetector(Node):
         binary = cv2.erode(binary, kernel, iterations=3)
         binary = cv2.dilate(binary, kernel, iterations=3)
 
-        # ROI PARA DETECTAR INTERSECCIÓN
+        # ROI TO DETECT THE INTERSECTION
         lost_roi = binary[int(roi_height * 0.88):, :]
         white_pixels = cv2.countNonZero(lost_roi)
         total_pixels = (lost_roi.shape[0] * lost_roi.shape[1])
@@ -114,7 +114,7 @@ class LineDetector(Node):
         # PROCESS EACH ROW
         for i, y in enumerate(scan_rows):
 
-            # Evitar filas fuera de rango
+            # Skip rows out of range
             if y >= roi_height:
                 continue
 
@@ -123,7 +123,7 @@ class LineDetector(Node):
 
             if len(white_pixels) > 0:
 
-                # dividir grupos de pixeles consecutivos
+                # split into groups of consecutive pixels
                 segments = np.split(white_pixels, np.where(np.diff(white_pixels) > 10)[0] + 1)
 
                 best_segment = None
@@ -132,21 +132,21 @@ class LineDetector(Node):
                 for segment in segments:
                     segment_size = len(segment)
 
-                    # ignorar ruido pequeño
+                    # ignore small noise
                     if segment_size < 20:
                         continue
 
                     segment_width = (segment[-1] - segment[0])
-                    # ignorar blobs gigantes
+                    # ignore huge blobs
                     if segment_width > (roi_width * 0.7):
                         continue
 
-                    # elegir el más grande
+                    # keep the largest one
                     if segment_size > largest_size:
                         largest_size = segment_size
                         best_segment = segment
 
-                # si no hay segmento válido en esta fila, se ignora
+                # no valid segment in this row: skip it
                 if best_segment is None:
                     continue
 
@@ -163,19 +163,19 @@ class LineDetector(Node):
                 # DEBUG
                 if self.debug_view:
 
-                    # línea horizontal
+                    # horizontal line
                     cv2.line(output, (0, y), (roi_width, y), (0, 255, 255), 1)
 
-                    # borde izquierdo
+                    # left edge
                     cv2.circle(output, (left, y), 4, (0, 255, 0), -1)
 
-                    # borde derecho
+                    # right edge
                     cv2.circle(output, (right, y), 4, (255, 0, 0), -1)
 
-                    # centro línea
+                    # line centre
                     cv2.circle(output, (center_line, y), 4, (0, 0, 255), -1)
 
-        # CALCULAR ERROR FINAL
+        # COMPUTE FINAL ERROR
         if line_lost:
             final_error = 0.0
 
@@ -186,7 +186,7 @@ class LineDetector(Node):
                 final_error = np.average(errors, weights=valid_weights)
                 self.last_error = final_error
 
-        # PUBLICAR ERROR
+        # PUBLISH ERROR
         error_msg = Float32()
         error_msg.data = float(final_error)
         self.pub_error.publish(error_msg)
@@ -197,19 +197,19 @@ class LineDetector(Node):
 
         # DEBUG
         if self.debug_view:
-            # centro imagen
+            # image centre
             cv2.line(output, (center_image, 0), (center_image, roi_height), (255, 255, 255), 2)
             cv2.putText(output, f'Error: {final_error:.1f}', (20, 40),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
-            # dibujar ROI de intersección
+            # draw the intersection ROI
             cv2.rectangle(output, (0, int(roi_height * 0.88)), (roi_width, roi_height),
                           (0, 255, 255), 2)
 
-            # mostrar ratio
+            # show ratio
             cv2.putText(output, f'LINE: {white_ratio:.2f}', (20, 160),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
 
-            # mostrar detección
+            # show detection
             if line_lost:
                 cv2.putText(output, 'LINE LOST', (20, 200),
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 3)

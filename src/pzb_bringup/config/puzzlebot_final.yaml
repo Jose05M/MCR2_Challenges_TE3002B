@@ -1,0 +1,95 @@
+# puzzlebot_final.yaml
+# --------------------
+# Parameters for the MCR2 Final Challenge (autonomous driving), shared by
+# puzzlebot_jetson.launch.py, puzzlebot_laptop.launch.py and
+# puzzlebot_yolo.launch.py (each node reads only its own section).
+
+line_detector:
+  ros__parameters:
+
+    # Topics
+    camera_topic: /video_source/yolo/compressed
+    compressed: true
+    line_error_topic: /line_error
+    debug_view: false
+
+    # Roi
+    crop_percent: 0.20
+
+traffic_light_detector:
+  ros__parameters:
+
+    kernel_size:       3
+    min_blob_area:     2000
+    min_circularity:   0.95
+
+    # Topics
+    camera_topic:      /video_source/raw
+    state_topic:       /traffic_light/state
+    debug_image:       false
+
+
+image_compressor:
+  ros__parameters:
+
+    # Topics
+    input_topic: /video_source/raw
+    output_topic: /video_source/yolo/compressed
+
+    width: 416
+    height: 416
+
+    jpeg_quality: 40
+
+    grayscale: true
+
+traffic_sign_detector:
+  ros__parameters:
+
+    camera_topic:        /video_source/yolo/compressed   # image_compressor output
+    compressed:          true                             # 416x416 gray JPEG
+    state_topic:         /traffic_sign/state
+    min_area:            8000                             # px² at 416x416
+    max_area:            80000
+    debug_view:          true                             # OpenCV window with the YOLO detections
+    # Full path to the YOLO model (.pt). Change only this value to use another model.
+    model_path:          /home/ed/ros2_challenge_mcr2/ros2_challenge2/src/pzb_detection/models/best_1.pt
+
+puzzlebot_controller:
+  ros__parameters:
+
+    # LINE FOLLOWING (PD)
+    linear_speed:    0.08
+    curve_speed:     0.10
+    curve_threshold: 60.0
+    kp_straight:     0.0012
+    kp_curve:        0.0040
+    kd:              0.0030
+    max_angular_vel: 1.5
+    alpha:           0.5       # low-pass filter on /line_error
+
+    # ROTATE manoeuvre
+    rotate_kp:            0.8
+    rotate_max_w:         1.5
+    rotate_tolerance_deg: 5.0
+
+fsm_node:
+  ros__parameters:
+
+    # INTERSECTIONS
+    stop_duration:      1.5      # s stopped at the zebra crossing (never moves on red)
+    straight_dist:      0.45     # m crossing straight
+    straight_speed:     0.10
+
+    # TURN (LEFT / RIGHT)
+    turn_forward_dist:  0.40     # m before rotating
+    turn_forward_speed: 0.10
+    turn_extra_angle:   0.241661 # rad on top of 90 deg (pi/13)
+    turn_exit_dist:     0.10     # m after rotating
+    turn_exit_speed:    0.08
+
+    # SIGNS
+    special_duration:   8.0      # s of WORKERS / ROUND behaviour
+    special_slow_after: 4.0      # s before slowing down
+    give_way_wait:      2.0      # s stopped for GIVE_WAY
+    stop_sign_delay:    6.0      # s following the line before stopping (STOP)
