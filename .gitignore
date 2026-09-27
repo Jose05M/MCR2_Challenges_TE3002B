@@ -30,3 +30,4 @@ src/yolov8_ros2/
 src/mcr2_puzzlebot/mcr2_puzzlebot/image_compressor.py
 src/mcr2_puzzlebot/mcr2_puzzlebot/line_follower.py
 src/mcr2_puzzlebot/mcr2_puzzlebot/traffic_sign_detector.py
+src/mcr2_puzzlebot/mcr2_puzzlebot/line_follower_controller.py

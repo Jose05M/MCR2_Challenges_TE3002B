@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
+"""
+Puzzlebot controller (final challenge).
 
+Line-following PD controller plus a finite state machine that obeys traffic
+lights, traffic signs and intersections (zebra crossings), using odometry for
+the turn / straight manoeuvres. Modes: FOLLOW, WAIT_INTERSECTION, TURN,
+STRAIGHT, SPECIAL (GIVE_WAY, WORKERS, ROUND) and STOPPED (resume with
+`ros2 topic pub /fsm_command std_msgs/msg/String "{data: 'START'}"`).
+"""
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import Twist
@@ -8,13 +16,12 @@ import numpy as np
 from nav_msgs.msg import Odometry
 from rclpy import qos
 
-class LineFollowerController(Node):
-    """
-    Point-to-point proportional controller with traffic light awareness.
-    """
+
+class PuzzlebotController(Node):
+    """Line follower + FSM for traffic lights, signs and intersections."""
 
     def __init__(self):
-        super().__init__('line_follower_controller')
+        super().__init__('puzzlebot_controller')
 
         self.declare_parameter('linear_speed', 0.08)
         self.declare_parameter('curve_speed', 0.10)
@@ -27,15 +34,15 @@ class LineFollowerController(Node):
         self.declare_parameter('max_angular_vel', 1.5)
         self.declare_parameter('alpha', 0.5)
         self.declare_parameter('straight_dist', 0.45)
-        self.declare_parameter('special_duration',8.0)
+        self.declare_parameter('special_duration', 8.0)
 
-        self.declare_parameter('cmd_vel_topic',         '/cmd_vel')
-        self.declare_parameter('line_error_topic',      '/line_error')
-        self.declare_parameter('state_topic',           '/traffic_light/state')
-        self.declare_parameter('signal_topic',          '/traffic_sign/state')
-        self.declare_parameter('odom_topic',            '/odom')
-        self.declare_parameter('activate_cmd',          '/fsm_command')
-        self.declare_parameter('intersection_topic',    '/intersection_detected')
+        self.declare_parameter('cmd_vel_topic', '/cmd_vel')
+        self.declare_parameter('line_error_topic', '/line_error')
+        self.declare_parameter('state_topic', '/traffic_light/state')
+        self.declare_parameter('signal_topic', '/traffic_sign/state')
+        self.declare_parameter('odom_topic', '/odom')
+        self.declare_parameter('activate_cmd', '/fsm_command')
+        self.declare_parameter('intersection_topic', '/intersection_detected')
 
         self.linear_speed = self.get_parameter('linear_speed').value
         self.curve_speed = self.get_parameter('curve_speed').value
@@ -50,18 +57,18 @@ class LineFollowerController(Node):
         self.straight_distance = self.get_parameter('straight_dist').value
         self.special_duration = self.get_parameter('special_duration').value
 
-        cmd_topic   = self.get_parameter('cmd_vel_topic').value
+        cmd_topic = self.get_parameter('cmd_vel_topic').value
         state_topic = self.get_parameter('state_topic').value
-        line_topic  = self.get_parameter('line_error_topic').value
-        sign_topic  = self.get_parameter('signal_topic').value
-        odometry_topic  = self.get_parameter('odom_topic').value
-        activate_topic  = self.get_parameter('activate_cmd').value
-        intersection_topic  = self.get_parameter('intersection_topic').value
+        line_topic = self.get_parameter('line_error_topic').value
+        sign_topic = self.get_parameter('signal_topic').value
+        odometry_topic = self.get_parameter('odom_topic').value
+        activate_topic = self.get_parameter('activate_cmd').value
+        intersection_topic = self.get_parameter('intersection_topic').value
 
         # State
         self.line_error = 0.0
         self.prev_error = 0.0
-        self.tl_state   = 'UNKNOWN'
+        self.tl_state = 'UNKNOWN'
         self.sign_state = "NONE"
         self.last_motion_state = ""
         self.current_linear_vel = 0.0
@@ -70,8 +77,8 @@ class LineFollowerController(Node):
         self.line_lost_threshold = 140
         self.filtered_error = 0.0
         self.zebra_crossing = False
-        
-        #Odometry
+
+        # Odometry
         self.current_x = 0.0
         self.current_y = 0.0
         self.start_x = 0.0
@@ -79,7 +86,7 @@ class LineFollowerController(Node):
         self.current_heading = 0.0
         self.turn_phase = "NONE"
         self.turn_target_heading = 0.0
-        
+
         # FSM modes:
         # FOLLOW
         # TURN
@@ -98,21 +105,24 @@ class LineFollowerController(Node):
         self.stop_duration = 1.5
 
         # ROS I/O
-        self.pub_vel  = self.create_publisher(Twist, cmd_topic, 10)
-        self.sub_line = self.create_subscription(Float32,line_topic,self._line_callback,1)
-        self.sub_tl   = self.create_subscription(String, state_topic, self._tl_callback, 10)
-        self.sub_sign = self.create_subscription(String, sign_topic, self._sign_callback,10)
-        self.sub_odom = self.create_subscription(Odometry,odometry_topic,self._odom_callback,qos.qos_profile_sensor_data)
-        self.sub_fsm = self.create_subscription(String,activate_topic,self._fsm_command_callback,10)
-        self.sub_intersection = self.create_subscription(Bool,intersection_topic,self._intersection_callback,10)
+        self.pub_vel = self.create_publisher(Twist, cmd_topic, 10)
+        self.sub_line = self.create_subscription(Float32, line_topic, self._line_callback, 1)
+        self.sub_tl = self.create_subscription(String, state_topic, self._tl_callback, 10)
+        self.sub_sign = self.create_subscription(String, sign_topic, self._sign_callback, 10)
+        self.sub_odom = self.create_subscription(
+            Odometry, odometry_topic, self._odom_callback, qos.qos_profile_sensor_data)
+        self.sub_fsm = self.create_subscription(
+            String, activate_topic, self._fsm_command_callback, 10)
+        self.sub_intersection = self.create_subscription(
+            Bool, intersection_topic, self._intersection_callback, 10)
 
         # Control loop at 20 Hz
         self.timer = self.create_timer(0.05, self._control_loop)
-        self.get_logger().info('LineFollowerController Started')
+        self.get_logger().info('PuzzlebotController Started')
 
     # Callbacks
     def _line_callback(self, msg: Float32):
-        self.filtered_error = (self.alpha * self.filtered_error +(1 - self.alpha) * msg.data)
+        self.filtered_error = (self.alpha * self.filtered_error + (1 - self.alpha) * msg.data)
         self.line_error = self.filtered_error
 
     def _tl_callback(self, msg: String):
@@ -128,8 +138,7 @@ class LineFollowerController(Node):
         # Quaternion → yaw (rotation around Z)
         siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
         cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
-        self.current_heading = np.arctan2(siny_cosp,cosy_cosp)
-
+        self.current_heading = np.arctan2(siny_cosp, cosy_cosp)
 
     def _fsm_command_callback(self, msg):
         command = msg.data
@@ -146,26 +155,27 @@ class LineFollowerController(Node):
             "LEFT",
             "RIGHT",
             "STRAIGHT",
-            "STOP"]:
+                "STOP"]:
             self.pending_action = self.sign_state
 
         elif self.sign_state in [
             "ROUND",
             "GIVE_WAY",
-            "WORKERS"]:
+                "WORKERS"]:
 
             self.special_behavior = self.sign_state
 
     def update_fsm(self):
-        #STOP
+        # STOP
         if self.pending_action == "STOP" and self.mode != "STOPPED":
             self.mode = "STOPPED"
             self.stop_start_time = (self.current_time)
             self.get_logger().info("Entering STOPPED mode")
             return
-        
+
         # FOLLOW -> WWAIT_INTERSECTION
-        if (self.mode == "FOLLOW" and self.zebra_crossing and not self.intersection_lock and self.pending_action in ["LEFT","RIGHT","STRAIGHT"]):
+        if (self.mode == "FOLLOW" and self.zebra_crossing and not self.intersection_lock
+                and self.pending_action in ["LEFT", "RIGHT", "STRAIGHT"]):
             self.intersection_lock = True
             self.mode = "WAIT_INTERSECTION"
             self.stop_start_time = self.current_time
@@ -206,13 +216,14 @@ class LineFollowerController(Node):
 
                 # calcular target
                 if self.pending_action == "LEFT":
-                    self.turn_target_heading = (self.turn_start_heading + np.pi/2 + np.pi/13)
+                    self.turn_target_heading = (self.turn_start_heading + np.pi / 2 + np.pi / 13)
 
                 elif self.pending_action == "RIGHT":
-                    self.turn_target_heading = (self.turn_start_heading - np.pi/2 - np.pi/13)
+                    self.turn_target_heading = (self.turn_start_heading - np.pi / 2 - np.pi / 13)
 
                 # normalizar
-                self.turn_target_heading = np.arctan2(np.sin(self.turn_target_heading),np.cos(self.turn_target_heading))
+                self.turn_target_heading = np.arctan2(
+                    np.sin(self.turn_target_heading), np.cos(self.turn_target_heading))
                 self.turn_phase = "ROTATE"
                 self.get_logger().info("Starting rotation")
 
@@ -230,7 +241,7 @@ class LineFollowerController(Node):
             )
 
             angular_vel = 0.8 * heading_error
-            angular_vel = np.clip(angular_vel, -1.5,1.5)
+            angular_vel = np.clip(angular_vel, -1.5, 1.5)
             self.twist.linear.x = 0.0
             self.twist.angular.z = angular_vel
 
@@ -257,7 +268,8 @@ class LineFollowerController(Node):
             self.twist.angular.z = 0.0
 
             # distancia después del giro
-            exit_distance = np.sqrt((self.current_x - self.start_x)**2 +(self.current_y - self.start_y)**2)
+            exit_distance = np.sqrt((self.current_x - self.start_x)**2
+                                    + (self.current_y - self.start_y)**2)
 
             if exit_distance >= 0.10:
                 self.twist.linear.x = 0.0
@@ -300,7 +312,6 @@ class LineFollowerController(Node):
         if elapsed >= 6.0:
             self.twist.linear.x = 0.0
             self.twist.angular.z = 0.0
-
 
     def handle_special_mode(self):
         # esperar semáforo verde
@@ -360,14 +371,13 @@ class LineFollowerController(Node):
                     self.intersection_lock = False
                     self.get_logger().info("Give way completed")
 
-        if ( self.special_behavior != "GIVE_WAY" and elapsed >= self.special_duration):
+        if (self.special_behavior != "GIVE_WAY" and elapsed >= self.special_duration):
             self.special_behavior = "NONE"
             self.mode = "FOLLOW"
             self.intersection_lock = False
             self.get_logger().info("Special behavior completed")
 
-
-    def handle_follow_mode(self,speed_multiplier=1.0):
+    def handle_follow_mode(self, speed_multiplier=1.0):
 
         # CURVE DETECTION
         curve_detected = (abs(self.line_error) > self.curve_threshold)
@@ -377,7 +387,7 @@ class LineFollowerController(Node):
             else:
                 self.get_logger().info("➡️ Recta detectada")
             self.curve_state = curve_detected
-    
+
         # ADAPTIVE KP
         if curve_detected:
             kp = self.kp_curve
@@ -392,7 +402,7 @@ class LineFollowerController(Node):
         self.prev_error = self.line_error
 
         # Saturation
-        angular_vel = np.clip(angular_vel,-self.w_max,self.w_max)
+        angular_vel = np.clip(angular_vel, -self.w_max, self.w_max)
         angular_vel *= 0.85
 
         # Adaptive Linear Speed
@@ -408,16 +418,16 @@ class LineFollowerController(Node):
 
         elif self.current_linear_vel > target_linear_vel:
             self.current_linear_vel -= self.acceleration
-            self.current_linear_vel = max(self.current_linear_vel,target_linear_vel)
+            self.current_linear_vel = max(self.current_linear_vel, target_linear_vel)
 
-        #LINE LOST
+        # LINE LOST
         linear_vel = self.current_linear_vel
         if abs(self.line_error) > self.line_lost_threshold:
             linear_vel *= 0.4
 
         # TURN-BASED SPEED REDUCTION
-        turn_factor = 1.0 - min(abs(angular_vel) / self.w_max,1.0)
-        turn_factor = max(turn_factor,0.35)
+        turn_factor = 1.0 - min(abs(angular_vel) / self.w_max, 1.0)
+        turn_factor = max(turn_factor, 0.35)
         linear_vel *= turn_factor
 
         # SPECIAL MODIFIER
@@ -443,7 +453,7 @@ class LineFollowerController(Node):
             self.start_x = self.current_x
             self.start_y = self.current_y
 
-            if self.pending_action in ["LEFT","RIGHT"]:
+            if self.pending_action in ["LEFT", "RIGHT"]:
                 self.mode = "TURN"
 
             elif self.pending_action == "STRAIGHT":
@@ -506,9 +516,10 @@ class LineFollowerController(Node):
 
         self.pub_vel.publish(self.twist)
 
+
 def main(args=None):
     rclpy.init(args=args)
-    node = LineFollowerController()
+    node = PuzzlebotController()
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:

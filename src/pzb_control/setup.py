@@ -25,6 +25,7 @@ setup(
             'closed_loop_controller = pzb_control.closed_loop_controller:main',
             'traffic_light_nav_controller = pzb_control.traffic_light_nav_controller:main',
             'line_follower_controller = pzb_control.line_follower_controller:main',
+            'puzzlebot_controller = pzb_control.puzzlebot_controller:main',
         ],
     },
 )
